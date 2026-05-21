@@ -182,8 +182,7 @@ def process_files(fs2_files, options, progress_cb=None):
 
     missions.sort(key=lambda x: mission_sort_key(x[0]))
 
-    messages_lines = []
-    briefings_lines = []
+    output_lines = []
 
     for idx, (mission_num, mission_name, content, fpath) in enumerate(missions):
         if progress_cb:
@@ -193,39 +192,39 @@ def process_files(fs2_files, options, progress_cb=None):
         header = f"Mission {mission_num}: {mission_name}"
         sep = "=" * 70
 
-        # ── MESSAGES ─────────────────────────────────────────────────────────
-       
-        # ── BRIEFINGS ────────────────────────────────────────────────────────
-        brf_section_lines = []
+        mission_lines = []
 
+        # ── 1. COMMAND BRIEFING ───────────────────────────────────────────────
         if options.get('command_briefings', True):
             cb = extract_section(content, '#Command Briefing')
             if cb:
                 stages = parse_command_briefing(cb)
                 if stages:
-                    brf_section_lines.append("[ COMMAND BRIEFING ]")
-                    brf_section_lines.append("")
+                    mission_lines.append("[ COMMAND BRIEFING ]")
+                    mission_lines.append("")
                     for i, (text, wave) in enumerate(stages, 1):
-                        brf_section_lines.append(f"Stage {i}:")
-                        brf_section_lines.append(text)
+                        mission_lines.append(f"Stage {i}:")
+                        mission_lines.append(text)
                         if wave:
-                            brf_section_lines.append(wave)
-                        brf_section_lines.append("")
+                            mission_lines.append(wave)
+                        mission_lines.append("")
 
+        # ── 2. BRIEFING ───────────────────────────────────────────────────────
         if options.get('briefings', True):
             br = extract_section(content, '#Briefing')
             if br:
                 stages = parse_briefing(br)
                 if stages:
-                    brf_section_lines.append("[ BRIEFING ]")
-                    brf_section_lines.append("")
+                    mission_lines.append("[ BRIEFING ]")
+                    mission_lines.append("")
                     for i, (text, voice) in enumerate(stages, 1):
-                        brf_section_lines.append(f"Stage {i}:")
-                        brf_section_lines.append(text)
+                        mission_lines.append(f"Stage {i}:")
+                        mission_lines.append(text)
                         if voice:
-                            brf_section_lines.append(voice)
-                        brf_section_lines.append("")
+                            mission_lines.append(voice)
+                        mission_lines.append("")
 
+        # ── 3. MESSAGES ───────────────────────────────────────────────────────
         if options.get('messages', True):
             msg_section = extract_messages_section(content)
             if msg_section:
@@ -251,38 +250,39 @@ def process_files(fs2_files, options, progress_cb=None):
                     msg_lines.append("")
 
                 if msg_lines:
-                    messages_lines += [sep, header, sep, ""]
-                    messages_lines += msg_lines
-        
+                    mission_lines.append("[ MESSAGES ]")
+                    mission_lines.append("")
+                    mission_lines += msg_lines
 
+        # ── 4. DEBRIEFING ─────────────────────────────────────────────────────
         if options.get('debriefings', True):
             db = extract_section(content, '#Debriefing_info')
             if db:
                 stages = parse_debriefing(db)
                 if stages:
-                    brf_section_lines.append("[ DEBRIEFING ]")
-                    brf_section_lines.append("")
+                    mission_lines.append("[ DEBRIEFING ]")
+                    mission_lines.append("")
                     for i, (formula, text, voice, rec) in enumerate(stages, 1):
-                        brf_section_lines.append(f"Stage {i}:")
-                        if formula:
-                            brf_section_lines.append(f"[Condition: {formula}]")
-                        brf_section_lines.append(text)
-                        if rec:
-                            brf_section_lines.append(f"[Recommendation: {rec}]")
-                        if voice:
-                            brf_section_lines.append(voice)
-                        brf_section_lines.append("")
+                        mission_lines.append(f"Stage {i}:")
 
-        if brf_section_lines:
-            briefings_lines += [sep, header, sep, ""]
-            briefings_lines += brf_section_lines
+                        mission_lines.append(text)
+                        if rec:
+                            mission_lines.append(f"[Recommendation: {rec}]")
+                        if voice:
+                            mission_lines.append(voice)
+                        mission_lines.append("")
+
+        if mission_lines:
+            output_lines += [sep, header, sep, ""]
+            output_lines += mission_lines
 
     if progress_cb:
         progress_cb(1, 1, "Done.")
 
+    combined = '\n'.join(output_lines)
     return {
-        'messages': '\n'.join(messages_lines),
-        'briefings': '\n'.join(briefings_lines),
+        'messages': combined,
+        'briefings': combined,
     }
 
 
@@ -636,30 +636,11 @@ class FS2ExtractorApp(tk.Tk):
         self._results = results
         saved = []
 
-        if self.opt_single_file.get():
-            combined = ""
-            if results.get('messages'):
-                combined += "╔══════════════════════════════════════╗\n"
-                combined += "║         IN-MISSION DIALOGUE          ║\n"
-                combined += "╚══════════════════════════════════════╝\n\n"
-                combined += results['messages'] + "\n\n"
-            if results.get('briefings'):
-                combined += "╔══════════════════════════════════════╗\n"
-                combined += "║      BRIEFINGS & DEBRIEFINGS         ║\n"
-                combined += "╚══════════════════════════════════════╝\n\n"
-                combined += results['briefings']
+        text = results.get('messages', '')
+        if text:
             out_path = os.path.join(out_dir, "fs2_extracted.txt")
-            Path(out_path).write_text(combined, encoding='utf-8')
+            Path(out_path).write_text(text, encoding='utf-8')
             saved.append(out_path)
-        else:
-            if results.get('messages'):
-                p = os.path.join(out_dir, "fs2_dialogue.txt")
-                Path(p).write_text(results['messages'], encoding='utf-8')
-                saved.append(p)
-            if results.get('briefings'):
-                p = os.path.join(out_dir, "fs2_briefings.txt")
-                Path(p).write_text(results['briefings'], encoding='utf-8')
-                saved.append(p)
 
         self.run_btn.config(state="normal")
         self.progress["value"] = 100
@@ -667,8 +648,9 @@ class FS2ExtractorApp(tk.Tk):
         tab = self.active_tab.get()
         self._render_preview(tab)
 
-        msg_count = results['messages'].count('\n:  ')
-        brf_count = results['briefings'].count('Stage ')
+        text = results.get('messages', '')
+        msg_count = text.count('\n:  ')
+        brf_count = text.count('Stage ')
         self._status(f"Done. {msg_count} dialogue lines, {brf_count} briefing stages. "
                      f"Saved {len(saved)} file(s) to {out_dir}")
 
